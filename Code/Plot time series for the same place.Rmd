@@ -1,0 +1,84 @@
+---
+title: "Plot time series for the same place"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(googlesheets)
+library(dplyr)
+df <- gs_title("TB systematic review plan")
+StudyArea <- df %>% gs_read(ws = 'Study area table')
+
+CaseCount <- df %>% gs_read(ws = 'Time series table')
+CaseCount$Date <- as.Date(CaseCount$Date)
+
+# combine study ID andn subID
+CaseCount$ID <- paste(CaseCount$StudyID, CaseCount$SubID, sep = "_")
+
+unique.place <- unique(StudyArea[,1:6])
+
+
+
+
+```
+
+# Beijing
+```{r}
+library(ggplot2)
+# Beijing
+cities <- CaseCount[CaseCount$ID %in% c("932_1","1514_1"),]
+ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("Beijing")
+```
+
+
+# Hongkong
+```{r}
+
+cities <- CaseCount[CaseCount$ID %in% c("932_2","1077_1"),]
+ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("Hong Kong")
+```
+
+# Wuhan
+```{r}
+cities <- CaseCount[CaseCount$ID %in% c("1431_1","1431_2","398_1"),]
+
+# sum up smear+ and smear- cases in 1431
+cities <- aggregate(CaseCount ~ StudyID + Date, cities, sum)
+ggplot(cities, aes(x = Date, y = CaseCount, col = as.factor(StudyID))) + geom_line() + theme_bw() + ggtitle("Wuhan")
+```
+
+# Jiangxi
+```{r}
+cities <- CaseCount[CaseCount$ID %in% c("165_1","1419_1"),]
+ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("Jiangxi")
+```
+
+# China
+```{r}
+cities <- CaseCount[CaseCount$ID %in% paste(c(196, 291, 428, 498, 730, 936, 1329, 1451, 1475, 1503),"_1", sep = ""),]
+China <- ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("China")
+library(plotly)
+ggplotly(China)
+```
+
+# Iran
+```{r}
+cities <- CaseCount[CaseCount$ID %in% paste(c(36, 42, 523, 1080),"_1", sep = ""),]
+ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("Iran")
+```
+
+# Mongolia
+```{r}
+cities <- CaseCount[CaseCount$ID %in% c("243_2", "721_1"),]
+cities.plot <- ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("Mongolia")
+ggplotly(cities.plot)
+```
+
+# United States
+```{r}
+cities <- CaseCount[CaseCount$ID %in% paste(c(441, 583, 1252),"_1", sep = ""),]
+ggplot(cities, aes(x = Date, y = CaseCount, col = ID)) + geom_line() + theme_bw() + ggtitle("United States")
+```
+

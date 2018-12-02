@@ -1,0 +1,156 @@
+---
+title: "TB Seasonality Review Time Series Data Formatting"
+output: html_notebook
+---
+
+Time series collected from literature will be extracted from google sheet and formatted here, then paste back to the result google sheet.
+
+### Step 1. [Read data from google sheet](http://htmlpreview.github.io/?https://raw.githubusercontent.com/jennybc/googlesheets/master/vignettes/basic-usage.html), and filter out rows with "Keep" in "Excluded after reading full-text" column
+
+```{r}
+library(googlesheets)
+library(dplyr)
+df <- gs_title("Paper list")
+papers <- df %>% gs_read(ws = 'Paper list')
+```
+
+```{r}
+keep <- papers[papers$`Excluded after reading full-text` == 'Keep', ]
+keep <- keep[!is.na(keep$RandomID), ]
+```
+
+### Step 2. Format "Start of study period" and "End of study period" column
+```{r}
+#standardize date formats
+##keep[is.na(as.Date(keep$`Start of study period`)), ] <- paste("1", keep$`Start of study period`)
+
+keep$`Start of study period` <- as.Date(keep$`Start of study period`)
+keep$`End of study period` <- as.Date(keep$`End of study period`)
+```
+
+```{r}
+keep$`Temporal scale`[keep$`Temporal scale` == "Weekly"] <- "week"
+keep$`Temporal scale`[keep$`Temporal scale` == "Monthly"] <- "month"
+keep$`Temporal scale`[keep$`Temporal scale` == "4-week"] <- "4 weeks"
+```
+
+### Step 3. Generate all time steps based on "Start of study period", "End of study period", and "Temporal scale" column, combine the time steps column with data column - quality control
+
+```{r}
+library(wktmo)
+
+keep$match <- NA
+keep$desired <- NA
+keep$actual <- NA
+library(dplyr)
+keep$SubID <- with(keep, ave(rep(1, nrow(keep)), RandomID, FUN = seq_along))
+
+
+
+pdf("H:\\__________Current Works________\\TB seasonality review\\Figures\\time series_actual.pdf", width = 8, height = 6)
+
+for(i in 1:nrow(keep)){
+  time.seq <- seq(keep$`Start of study period`[i], keep$`End of study period`[i], keep$`Temporal scale`[i])
+  keep$desired[i] <- length(time.seq)
+ 
+  time.series <- as.numeric(unlist(strsplit(keep$`Case counts`[i], split = "\\s+|\\t")))
+  keep$actual[i] <- length(time.series)
+  
+  keep$match[i] <- keep$desired[i] == keep$actual[i]
+  
+  if(!is.na(time.series[1]))
+    plot(time.series, xlab = "Index", ylab = "Case count", main = keep$RandomID[i], type = "l")
+    points(time.series, pch = 16, cex = 0.5)
+    
+  # formatted.ts <- rbind(formatted.ts, data.frame(StudyID = keep$RandomID[i], SubID = keep$SubID[i], Date = time.seq, CaseCount = time.series))
+}
+dev.off()
+
+
+
+
+```
+
+
+### Step 4.  Paste the results back to the result google sheet
+```{r}
+df <- df %>% gs_ws_new(ws_title = "timepoints_check_1112", input = keep, trim = T, verbose = F)
+
+
+```
+
+### Step5. Formatted data to long table, convert to monthly data
+```{r}
+to.month <- function(time.seq, Casecount)
+{
+  library(lubridate)
+  out.month <- seq(floor_date(time.seq[1], "month"), floor_date(time.seq[length(time.seq)], "month"), "month")
+  out.month <- array(0, length(out.month), dimnames = list(as.character(out.month)))
+  
+
+  
+  # add a fake time point at the end
+  time.interval <- time.seq[2]-time.seq[1]
+  time.seq.p1 <- c(time.seq, time.seq[length(time.seq)] + time.interval)
+  
+  data.month <- floor_date(time.seq.p1, "month")
+  
+  # distribute current case count to month
+  for(i in 1:(length(time.seq.p1)-1))
+  {
+    if(data.month[i] == data.month[i+1])
+    {
+      out.month[as.character(data.month[i])] <- out.month[as.character(data.month[i])] + Casecount[i]
+    } else
+    {
+      out.month[as.character(data.month[i])] <- out.month[as.character(data.month[i])] + round(Casecount[i]/as.numeric(time.interval)*as.numeric((ceiling_date(time.seq.p1[i], "month") - time.seq.p1[i])),0)
+      out.month[as.character(data.month[i+1])] <- out.month[as.character(data.month[i+1])] + round(Casecount[i]/as.numeric(time.interval)*(as.numeric(time.interval) - as.numeric(ceiling_date(time.seq.p1[i], "month") - time.seq.p1[i])),0)
+    }
+    
+    # print(out.month)
+  }
+  
+  # scale the incomplete month
+  # for the first month
+  out.month[1] <- round(out.month[1]/(days_in_month(data.month[1]) - as.numeric(time.seq[1] - data.month[1]))*days_in_month(data.month[1]),0)
+  # for the last month
+  out.month[length(out.month)] <- round(out.month[length(out.month)]/(as.numeric(time.seq.p1[length(time.seq.p1)] - data.month[length(data.month)-1]))*days_in_month(data.month[length(data.month)-1]),0)
+  
+  if(data.month[length(data.month)] == data.month[length(data.month)-1])
+  {
+    out.month
+  } else
+  {
+    out.month[-length(out.month)]
+  }
+  
+}
+
+
+
+
+formatted.ts <- NULL
+for(i in 1:nrow(keep)){
+  time.seq <- seq(keep$`Start of study period`[i], keep$`End of study period`[i], keep$`Temporal scale`[i])
+  time.series <- as.numeric(unlist(strsplit(keep$`Case counts`[i], split = "\\s+|\\t")))
+  
+  if(keep$`Temporal scale`[i] != "month")
+  {
+    month.ts <- to.month(time.seq, time.series)
+    time.seq <- as.Date(names(month.ts))
+    time.series <- month.ts
+  }
+  
+  formatted.ts <- rbind(formatted.ts, data.frame(StudyID = keep$RandomID[i], SubID = keep$SubID[i], Date = time.seq, CaseCount = time.series))
+}
+
+
+
+
+# very slow....
+# df.ts <- gs_title("TB systematic review plan")
+# df.ts <- df.ts %>% gs_edit_cells(ws = "Time series table", input = formatted.ts, trim = TRUE)
+# df.ts <- df.ts %>% gs_ws_new(ws_title = "Time series table_1113", input = formatted.ts, trim = T, verbose = F)
+write.csv(formatted.ts, "Formatted time series.csv", row.names = FALSE)
+```
+
